@@ -1,7 +1,7 @@
 const pty = require('node-pty');
 const { getSSMClient } = require('../config/aws');
 const { StartSessionCommand } = require('@aws-sdk/client-ssm');
-const { getEC2InstancesByRegion, generateOSSpecificActions, getAWSRoleInfo } = require('../services/ec2Service');
+const { getEC2InstancesByRegion, generateOSSpecificActions, getAWSRoleInfo, getEC2InstancesByAccount, getEC2InstancesByRegionForAccount } = require('../services/ec2Service');
 const { analyzeTerminalOutput } = require('../services/terminalAnalyzer');
 const { generateProblemSolution, generateDynamicActions, generateAIResponse, generateAIResponseStreaming } = require('../services/aiService');
 const { executeCommandSequence } = require('../services/executionService');
@@ -15,18 +15,69 @@ function setupSocketHandlers(io) {
     console.log('✅ 클라이언트 연결:', socket.id);
 
     // EC2 인스턴스 목록 조회
-    socket.on('get-ec2-instances', async () => {
+    socket.on('get-ec2-instances', async (data = {}) => {
       try {
-        socket.emit('ec2-instances-loading', { message: 'EC2 인스턴스를 조회하고 있습니다...' });
+        const { accountId, externalId } = data;
         
-        const instancesByRegion = await getEC2InstancesByRegion();
+        socket.emit('ec2-instances-loading', { 
+          message: accountId 
+            ? `계정 ${accountId}의 EC2 인스턴스를 조회하고 있습니다...` 
+            : 'EC2 인스턴스를 조회하고 있습니다...' 
+        });
+        
+        // 계정 자격 증명 가져오기
+        const { getAccountCredentials, getBaseAccountInfo } = require('../config/accounts');
+        const credentials = await getAccountCredentials(accountId, externalId);
+        
+        // 계정 정보 생성
+        let accountInfo;
+        if (accountId) {
+          accountInfo = {
+            accountId: accountId,
+            accountName: accountId,
+            externalId: externalId,
+            isBase: false
+          };
+        } else {
+          const baseAccount = await getBaseAccountInfo();
+          accountInfo = {
+            accountId: baseAccount.accountId,
+            accountName: '기본 계정',
+            externalId: null,
+            isBase: true
+          };
+        }
+        
+        // 해당 계정의 인스턴스 조회
+        const instancesByRegion = await getEC2InstancesByRegionForAccount(credentials, accountInfo);
         
         socket.emit('ec2-instances-loaded', { 
           instancesByRegion,
-          totalInstances: Object.values(instancesByRegion).reduce((sum, instances) => sum + instances.length, 0)
+          totalInstances: Object.values(instancesByRegion).reduce((sum, instances) => sum + instances.length, 0),
+          accountId: accountInfo.accountId
         });
       } catch (error) {
         console.error('EC2 인스턴스 조회 오류:', error);
+        socket.emit('ec2-instances-error', { error: error.message });
+      }
+    });
+
+    // 멀티 계정 EC2 인스턴스 목록 조회
+    socket.on('get-ec2-instances-multi-account', async () => {
+      try {
+        socket.emit('ec2-instances-loading', { message: '멀티 계정에서 EC2 인스턴스를 조회하고 있습니다...' });
+        
+        const instancesByAccount = await getEC2InstancesByAccount();
+        
+        const totalInstances = Object.values(instancesByAccount).reduce((sum, acc) => sum + acc.totalInstances, 0);
+        
+        socket.emit('ec2-instances-multi-account-loaded', { 
+          instancesByAccount,
+          totalInstances,
+          totalAccounts: Object.keys(instancesByAccount).length
+        });
+      } catch (error) {
+        console.error('멀티 계정 EC2 인스턴스 조회 오류:', error);
         socket.emit('ec2-instances-error', { error: error.message });
       }
     });
@@ -60,15 +111,33 @@ function setupSocketHandlers(io) {
     // EC2 세션 매니저 연결 (크로스 어카운트 지원)
     socket.on('start-session', async (data) => {
       const { instanceId, instanceInfo } = data;
+      const accountId = instanceInfo?.accountId || null;
+      const externalId = instanceInfo?.externalId || null;
       
       try {
-        console.log(`🚀 세션 시작: ${instanceId}`);
+        console.log(`🚀 세션 시작 요청: ${instanceId}${accountId ? ` (계정: ${accountId})` : ''}`);
         
         // 기존 히스토리 로드
         const existingHistory = await historyService.getHistory(instanceId);
         
-        // 크로스 어카운트 SSM 클라이언트 가져오기
-        const ssmClient = await getSSMClient();
+        // 계정별 자격 증명 가져오기
+        const { getAccountCredentials } = require('../config/accounts');
+        const credentials = await getAccountCredentials(accountId, externalId);
+        
+        // 자격 증명이 함수인 경우 (fromEnv) 실제 값으로 변환
+        let actualCredentials;
+        if (typeof credentials === 'function') {
+          actualCredentials = await credentials();
+        } else {
+          actualCredentials = credentials;
+        }
+        
+        console.log(`🔑 자격 증명 획득 완료 (계정: ${accountId || '기본 계정'})`);
+        
+        // 계정별 SSM 클라이언트 가져오기
+        const ssmClient = await getSSMClient(accountId, externalId);
+        
+        console.log(`🔑 SSM 클라이언트 생성 완료 (계정: ${accountId || '기본 계정'})`);
         
         // SSM 세션 시작
         const sessionParams = {
@@ -80,18 +149,27 @@ function setupSocketHandlers(io) {
         const session = await ssmClient.send(command);
         console.log(`✅ SSM 세션 생성: ${session.SessionId}`);
         
-        // 크로스 어카운트 역할을 위한 환경 변수 설정
-        const crossAccountEnv = { ...process.env };
-        let awsCliArgs = [
+        // AWS CLI를 위한 환경 변수 설정 (임시 자격 증명 포함)
+        const awsEnv = {
+          ...process.env,
+          AWS_REGION: process.env.AWS_REGION || 'ap-northeast-2'
+        };
+        
+        // 임시 자격 증명이 있으면 환경 변수로 전달
+        if (actualCredentials && actualCredentials.accessKeyId) {
+          awsEnv.AWS_ACCESS_KEY_ID = actualCredentials.accessKeyId;
+          awsEnv.AWS_SECRET_ACCESS_KEY = actualCredentials.secretAccessKey;
+          if (actualCredentials.sessionToken) {
+            awsEnv.AWS_SESSION_TOKEN = actualCredentials.sessionToken;
+          }
+          console.log(`🔐 임시 자격 증명을 AWS CLI에 전달 (Session Token: ${actualCredentials.sessionToken ? 'Yes' : 'No'})`);
+        }
+        
+        const awsCliArgs = [
           'ssm', 'start-session',
           '--target', instanceId,
           '--region', process.env.AWS_REGION || 'ap-northeast-2'
         ];
-        
-        // 크로스 어카운트 역할이 설정된 경우 AWS CLI 프로파일 사용
-        if (process.env.CROSS_ACCOUNT_ROLE_ARN && !process.env.CROSS_ACCOUNT_ROLE_ARN.includes('TARGET_ACCOUNT_ID')) {
-          awsCliArgs.push('--profile', 'crossAccountTest');
-        }
 
         // 세션 매니저 터미널 프로세스 생성 (색상 지원 강화)
         const ptyProcess = pty.spawn('aws', awsCliArgs, {
@@ -99,9 +177,7 @@ function setupSocketHandlers(io) {
           cols: 80,
           rows: 30,
           cwd: process.env.HOME,
-          env: {
-            ...crossAccountEnv
-          }
+          env: awsEnv
         });
 
         activeSessions.set(socket.id, {
