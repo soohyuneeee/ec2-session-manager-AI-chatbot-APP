@@ -1,5 +1,4 @@
 node_modules
-client/node_modules
 npm-debug.log
 .env
 .env.local
@@ -13,7 +12,12 @@ README.md
 coverage
 .nyc_output
 dist
-client/build
 .cache
 deployment
 .github
+CICD_SETUP.md
+DEPLOYMENT.md
+
+# Only ignore built files, not source
+client/build
+client/node_modules
