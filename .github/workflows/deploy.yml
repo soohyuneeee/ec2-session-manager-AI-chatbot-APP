@@ -81,13 +81,14 @@ jobs:
       with:
         payload: |
           {
-            "text": "✅ Deployment Successful",
+            "text": "✅ 배포 성공",
             "blocks": [
               {
                 "type": "header",
                 "text": {
                   "type": "plain_text",
-                  "text": "✅ Deployment Successful"
+                  "text": "🚀 배포가 성공적으로 완료되었습니다!",
+                  "emoji": true
                 }
               },
               {
@@ -95,27 +96,19 @@ jobs:
                 "fields": [
                   {
                     "type": "mrkdwn",
-                    "text": "*Repository:*\n${{ github.repository }}"
+                    "text": "*📦 리포지토리*\n`${{ github.repository }}`"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Branch:*\n${{ github.ref_name }}"
+                    "text": "*🌿 브랜치*\n`${{ github.ref_name }}`"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Commit:*\n<${{ github.event.head_commit.url }}|${{ github.sha }}>"
+                    "text": "*👤 작성자*\n${{ github.actor }}"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Author:*\n${{ github.actor }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Image:*\n${{ steps.build-image.outputs.image }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Service:*\n${{ env.ECS_SERVICE }}"
+                    "text": "*⏱️ 시간*\n<!date^${{ github.event.head_commit.timestamp }}^{date_short_pretty} {time}|${{ github.event.head_commit.timestamp }}>"
                   }
                 ]
               },
@@ -123,8 +116,24 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "*Commit Message:*\n${{ github.event.head_commit.message }}"
+                  "text": "*💬 커밋 메시지*\n```${{ github.event.head_commit.message }}```"
                 }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*🐳 이미지*\n`${{ steps.build-image.outputs.image }}`"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*🎯 서비스*\n`${{ env.ECS_SERVICE }}`"
+                  }
+                ]
+              },
+              {
+                "type": "divider"
               },
               {
                 "type": "actions",
@@ -133,9 +142,20 @@ jobs:
                     "type": "button",
                     "text": {
                       "type": "plain_text",
-                      "text": "View Workflow"
+                      "text": "워크플로우 보기",
+                      "emoji": true
                     },
-                    "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                    "style": "primary"
+                  },
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "커밋 보기",
+                      "emoji": true
+                    },
+                    "url": "${{ github.event.head_commit.url }}"
                   }
                 ]
               }
@@ -151,13 +171,14 @@ jobs:
       with:
         payload: |
           {
-            "text": "❌ Deployment Failed",
+            "text": "❌ 배포 실패",
             "blocks": [
               {
                 "type": "header",
                 "text": {
                   "type": "plain_text",
-                  "text": "❌ Deployment Failed"
+                  "text": "⚠️ 배포에 실패했습니다",
+                  "emoji": true
                 }
               },
               {
@@ -165,19 +186,19 @@ jobs:
                 "fields": [
                   {
                     "type": "mrkdwn",
-                    "text": "*Repository:*\n${{ github.repository }}"
+                    "text": "*📦 리포지토리*\n`${{ github.repository }}`"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Branch:*\n${{ github.ref_name }}"
+                    "text": "*🌿 브랜치*\n`${{ github.ref_name }}`"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Commit:*\n<${{ github.event.head_commit.url }}|${{ github.sha }}>"
+                    "text": "*👤 작성자*\n${{ github.actor }}"
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*Author:*\n${{ github.actor }}"
+                    "text": "*⏱️ 시간*\n<!date^${{ github.event.head_commit.timestamp }}^{date_short_pretty} {time}|${{ github.event.head_commit.timestamp }}>"
                   }
                 ]
               },
@@ -185,8 +206,18 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "*Commit Message:*\n${{ github.event.head_commit.message }}"
+                  "text": "*💬 커밋 메시지*\n```${{ github.event.head_commit.message }}```"
                 }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "⚠️ *빠른 조치가 필요합니다!*\n로그를 확인하여 문제를 해결해주세요."
+                }
+              },
+              {
+                "type": "divider"
               },
               {
                 "type": "actions",
@@ -195,10 +226,20 @@ jobs:
                     "type": "button",
                     "text": {
                       "type": "plain_text",
-                      "text": "View Logs"
+                      "text": "로그 확인하기",
+                      "emoji": true
                     },
                     "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                     "style": "danger"
+                  },
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "커밋 보기",
+                      "emoji": true
+                    },
+                    "url": "${{ github.event.head_commit.url }}"
                   }
                 ]
               }
