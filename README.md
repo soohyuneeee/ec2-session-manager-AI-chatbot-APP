@@ -149,7 +149,7 @@ BEDROCK_MODEL_ID=arn:aws:bedrock:us-east-1:your_account_id:inference-profile/us.
 BEDROCK_REGION=us-east-1
 
 # 크로스 어카운트 역할 설정 (선택사항)
-CROSS_ACCOUNT_ROLE_ARN=arn:aws:iam::target_account_id:role/crossAccountTest
+CROSS_ACCOUNT_ROLE_ARN=arn:aws:iam::target_account_id:role/SaltwareCrossAccount
 CROSS_ACCOUNT_EXTERNAL_ID=optional_external_id
 CROSS_ACCOUNT_SESSION_NAME=ec2-session-manager-cross-account
 
@@ -216,7 +216,7 @@ PORT=3003
        {
          "Effect": "Allow",
          "Action": "sts:AssumeRole",
-         "Resource": "arn:aws:iam::TARGET_ACCOUNT_ID:role/crossAccountTest"
+         "Resource": "arn:aws:iam::TARGET_ACCOUNT_ID:role/SaltwareCrossAccount"
        }
      ]
    }

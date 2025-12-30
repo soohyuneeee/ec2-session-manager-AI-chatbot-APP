@@ -1,4 +1,4 @@
-// crossAccountTest 역할의 AWS API 권한 제약사항 정의
+// SaltwareCrossAccount 역할의 AWS API 권한 제약사항 정의
 
 const CROSS_ACCOUNT_AWS_PERMISSIONS = {
   // 허용된 AWS API 액션들
@@ -169,7 +169,7 @@ function isAWSActionAllowed(awsAction) {
     action === forbiddenAction.toLowerCase()
   );
   
-  if (isForbidden) return { allowed: false, type: 'forbidden', reason: 'crossAccountTest 역할에 권한이 없습니다' };
+  if (isForbidden) return { allowed: false, type: 'forbidden', reason: 'SaltwareCrossAccount 역할에 권한이 없습니다' };
   
   // 기본적으로 금지 (명시적으로 허용되지 않은 것은 차단)
   return { allowed: false, type: 'unknown', reason: '명시적으로 허용되지 않은 AWS API입니다' };
@@ -178,7 +178,7 @@ function isAWSActionAllowed(awsAction) {
 // AWS 서비스별 사용 가능한 기능 설명
 function getAWSPermissionConstraints() {
   return `
-**현재 AWS API 권한 제약사항 (crossAccountTest 역할):**
+**현재 AWS API 권한 제약사항 (SaltwareCrossAccount 역할):**
 
 ✅ **허용된 AWS API:**
 - **EC2**: 인스턴스 조회, 상태 확인, 리전/VPC 정보 조회
@@ -200,7 +200,7 @@ function getAWSPermissionConstraints() {
 // 권한 제약사항을 설명하는 텍스트 생성 (터미널 명령어용)
 function getPermissionConstraints() {
   return `
-**현재 권한 상태 (crossAccountTest 역할):**
+**현재 권한 상태 (SaltwareCrossAccount 역할):**
 
 ✅ **모든 명령어 사용 가능:**
 - 시스템 정보 조회 (df, free, ps, netstat 등)

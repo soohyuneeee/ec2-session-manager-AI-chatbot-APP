@@ -266,7 +266,7 @@ ${instanceInfo ? `
   ]
 }
 
-**중요: crossAccountTest 역할의 권한 제약사항**
+**중요: SaltwareCrossAccount 역할의 권한 제약사항**
 
 **터미널 명령어 사용:**
 모든 Linux 명령어를 자유롭게 사용할 수 있습니다:
