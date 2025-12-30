@@ -226,23 +226,27 @@ function App() {
             display: 'flex', 
             alignItems: 'center', 
             gap: 1,
-            background: 'rgba(255, 255, 255, 0.1)',
+            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.25) 100%)',
             borderRadius: '20px',
-            padding: '8px 16px'
+            padding: '8px 16px',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
           }}>
             <Box sx={{ 
               width: 8, 
               height: 8, 
               borderRadius: '50%', 
-              backgroundColor: isConnected ? (hasAnySessions ? '#22c55e' : '#eab308') : '#ef4444'
+              backgroundColor: isConnected ? (hasAnySessions ? '#22c55e' : '#eab308') : '#ef4444',
+              boxShadow: isConnected ? (hasAnySessions ? '0 0 8px #22c55e' : '0 0 8px #eab308') : '0 0 8px #ef4444'
             }} />
             <Typography 
               variant="body2" 
               sx={{ 
-                color: 'white',
-                fontWeight: 600,
+                color: '#ffffff',
+                fontWeight: 700,
                 fontSize: '0.9rem',
-                textShadow: '0 0 10px rgba(255, 255, 255, 0.5)'
+                textShadow: '0 1px 3px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.5)',
+                letterSpacing: '-0.02em'
               }}
             >
               {isConnected ? (hasAnySessions ? `${sessions.length}개 세션 활성` : '연결됨') : '연결 해제됨'}
