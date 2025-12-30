@@ -85,10 +85,12 @@ jobs:
 
     - name: Notify Slack on Success
       if: success()
-      uses: slackapi/slack-github-action@v1.26.0
-      with:
-        payload: |
-          {
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        curl -X POST $SLACK_WEBHOOK_URL \
+          -H 'Content-Type: application/json' \
+          -d '{
             "text": "✅ 배포 성공",
             "blocks": [
               {
@@ -116,27 +118,7 @@ jobs:
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "*⏱️ 시간*\n${{ github.event.head_commit.timestamp }}"
-                  }
-                ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*💬 커밋 메시지*\n```${{ github.event.head_commit.message }}```"
-                }
-              },
-              {
-                "type": "section",
-                "fields": [
-                  {
-                    "type": "mrkdwn",
                     "text": "*🐳 이미지*\n`${{ steps.build-image.outputs.image }}`"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*🎯 서비스*\n`${{ env.ECS_SERVICE }}`"
                   }
                 ]
               },
@@ -155,30 +137,20 @@ jobs:
                     },
                     "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                     "style": "primary"
-                  },
-                  {
-                    "type": "button",
-                    "text": {
-                      "type": "plain_text",
-                      "text": "커밋 보기",
-                      "emoji": true
-                    },
-                    "url": "${{ github.event.head_commit.url }}"
                   }
                 ]
               }
             ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          }'
 
     - name: Notify Slack on Failure
       if: failure()
-      uses: slackapi/slack-github-action@v1.26.0
-      with:
-        payload: |
-          {
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        curl -X POST $SLACK_WEBHOOK_URL \
+          -H 'Content-Type: application/json' \
+          -d '{
             "text": "❌ 배포 실패",
             "blocks": [
               {
@@ -203,19 +175,8 @@ jobs:
                   {
                     "type": "mrkdwn",
                     "text": "*👤 작성자*\n${{ github.actor }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*⏱️ 시간*\n${{ github.event.head_commit.timestamp }}"
                   }
                 ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*💬 커밋 메시지*\n```${{ github.event.head_commit.message }}```"
-                }
               },
               {
                 "type": "section",
@@ -239,20 +200,8 @@ jobs:
                     },
                     "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                     "style": "danger"
-                  },
-                  {
-                    "type": "button",
-                    "text": {
-                      "type": "plain_text",
-                      "text": "커밋 보기",
-                      "emoji": true
-                    },
-                    "url": "${{ github.event.head_commit.url }}"
                   }
                 ]
               }
             ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          }'
