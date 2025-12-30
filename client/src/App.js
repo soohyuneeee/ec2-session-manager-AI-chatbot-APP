@@ -7,6 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import Terminal from './components/Terminal';
 import ChatBot from './components/ChatBot';
 import ConnectionPanel from './components/ConnectionPanel';
+import AccountSelector from './components/AccountSelector';
 import io from 'socket.io-client';
 import './App.css';
 
@@ -30,6 +31,10 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
   const socketRef = useRef(null);
+  
+  // 계정 선택 상태
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [showAccountSelector, setShowAccountSelector] = useState(true);
   
   // 각 세션의 메시지와 히스토리 상태를 App에서 관리
   const [sessionStates, setSessionStates] = useState({}); // { sessionId: { messages: [], historyCount: 0, historyMessages: [] } }
@@ -105,6 +110,13 @@ function App() {
     };
   }, []);
 
+  // 계정 선택 핸들러
+  const handleAccountSelect = (accountInfo) => {
+    console.log('계정 선택:', accountInfo);
+    setSelectedAccount(accountInfo);
+    setShowAccountSelector(false);
+  };
+
   // 새 세션 추가 - 각 세션마다 독립적인 socket 생성
   const handleAddSession = (instance) => {
     // 이미 같은 인스턴스의 세션이 열려있는지 확인
@@ -131,10 +143,14 @@ function App() {
     sessionSocket.on('connect', () => {
       console.log(`세션 ${newSessionId} socket 연결됨:`, sessionSocket.id);
       
-      // 연결 후 세션 시작
+      // 연결 후 세션 시작 (계정 정보 포함)
       sessionSocket.emit('start-session', {
         instanceId: instance.instanceId,
-        instanceInfo: instance
+        instanceInfo: {
+          ...instance,
+          accountId: selectedAccount?.accountId,
+          externalId: selectedAccount?.externalId
+        }
       });
     });
     
@@ -203,6 +219,11 @@ function App() {
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const hasAnySessions = sessions.length > 0;
+
+  // 계정 선택 화면 표시
+  if (showAccountSelector) {
+    return <AccountSelector onAccountSelect={handleAccountSelect} />;
+  }
 
   return (
     <div className="App">
@@ -308,17 +329,26 @@ function App() {
                   label={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <span>🖥️ {session.instance.name}</span>
-                      <IconButton
-                        size="small"
+                      <Box
+                        component="span"
                         onClick={(e) => handleCloseSession(session.id, e)}
                         sx={{ 
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                           width: 20, 
                           height: 20,
-                          '&:hover': { backgroundColor: 'rgba(244, 67, 54, 0.1)' }
+                          borderRadius: '50%',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          '&:hover': { 
+                            backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                            transform: 'scale(1.1)'
+                          }
                         }}
                       >
                         <CloseIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
+                      </Box>
                     </Box>
                   }
                 />
@@ -340,6 +370,7 @@ function App() {
               socket={socketRef.current} 
               onInstanceSelect={handleAddSession}
               activeSessions={sessions}
+              selectedAccount={selectedAccount}
             />
             />
           </Box>
