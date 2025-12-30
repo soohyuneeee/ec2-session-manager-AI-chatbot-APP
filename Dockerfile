@@ -11,15 +11,15 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files first (better caching)
 COPY package*.json ./
 COPY client/package*.json ./client/
 
-# Install dependencies
+# Install dependencies (이 레이어는 package.json이 변경되지 않으면 캐시됨)
 RUN npm ci
 RUN cd client && npm ci
 
-# Copy source code
+# Copy source code (소스 변경 시에만 이 레이어부터 재빌드)
 COPY server ./server
 COPY client/src ./client/src
 COPY client/public ./client/public
@@ -31,6 +31,7 @@ RUN cd client && npm run build
 FROM node:18-slim
 
 # Install AWS CLI, Session Manager Plugin and other dependencies
+# (이 레이어는 거의 변경되지 않으므로 캐시 효과가 큼)
 RUN apt-get update && apt-get install -y \
     curl \
     unzip \
@@ -52,7 +53,7 @@ RUN pip3 install --break-system-packages uv
 # Set working directory
 WORKDIR /app
 
-# Copy from builder
+# Copy from builder (순서 최적화: 자주 변경되지 않는 것부터)
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/server ./server
