@@ -505,6 +505,9 @@ function setupSocketHandlers(io) {
         // 세션 삭제
         activeSessions.delete(socket.id);
         
+        // 클라이언트에 세션 종료 이벤트 전송 (탭 닫기용)
+        socket.emit('session-closed');
+        
         // 클라이언트에 확인 메시지
         socket.emit('chat-response', {
           message: '🔌 **세션이 종료되었습니다**\n\n터미널 연결이 끊어졌습니다.',

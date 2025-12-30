@@ -4,7 +4,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import 'xterm/css/xterm.css';
 
-const Terminal = ({ socket }) => {
+const Terminal = ({ socket, sessionId, onCloseSession }) => {
   const terminalRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -132,7 +132,16 @@ const Terminal = ({ socket }) => {
           }
         };
 
+        // 세션 종료 이벤트 수신 (서버에서 disconnect-session 완료 시)
+        const handleSessionClosed = () => {
+          console.log('세션이 종료되었습니다. 탭을 닫습니다.');
+          if (onCloseSession) {
+            onCloseSession();
+          }
+        };
+
         socket.on('terminal-output', handleTerminalOutput);
+        socket.on('session-closed', handleSessionClosed);
 
         // 디바운싱을 위한 타이머와 이전 크기 저장
         let resizeTimeout = null;
@@ -236,6 +245,7 @@ const Terminal = ({ socket }) => {
             }
             if (socket) {
               socket.off('terminal-output', handleTerminalOutput);
+              socket.off('session-closed', handleSessionClosed);
             }
             if (xterm) {
               xterm.dispose();

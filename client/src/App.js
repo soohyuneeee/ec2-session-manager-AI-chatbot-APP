@@ -150,7 +150,7 @@ function App() {
 
   // 세션 닫기
   const handleCloseSession = (sessionId, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     
     const sessionToClose = sessions.find(s => s.id === sessionId);
     if (sessionToClose && sessionToClose.socket) {
@@ -171,6 +171,7 @@ function App() {
         setShowConnectionPanel(true);
         setActiveSessionId(null);
       } else if (activeSessionId === sessionId) {
+        // 닫힌 탭이 활성 탭이었다면 다음 탭으로 이동
         setActiveSessionId(filtered[0].id);
       }
       return filtered;
@@ -239,8 +240,9 @@ function App() {
               variant="body2" 
               sx={{ 
                 color: 'white',
-                fontWeight: 500,
-                fontSize: '0.875rem'
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                textShadow: '0 0 10px rgba(255, 255, 255, 0.5)'
               }}
             >
               {isConnected ? (hasAnySessions ? `${sessions.length}개 세션 활성` : '연결됨') : '연결 해제됨'}
@@ -385,7 +387,11 @@ function App() {
                       padding: '4px',
                       height: 'calc(100% - 40px)'
                     }}>
-                      <Terminal socket={session.socket} sessionId={session.id} />
+                      <Terminal 
+                        socket={session.socket} 
+                        sessionId={session.id}
+                        onCloseSession={() => handleCloseSession(session.id)}
+                      />
                     </Box>
                   </div>
                 </Box>
