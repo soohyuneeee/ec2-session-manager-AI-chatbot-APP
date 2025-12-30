@@ -115,10 +115,8 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [], select
     setSelectedInstance(instance);
     setInstanceId(instance.instanceId);
     
-    // 인스턴스 선택 시에도 상위 컴포넌트로 정보 전달
-    if (onInstanceSelect) {
-      onInstanceSelect(instance);
-    }
+    // 인스턴스 선택만 하고 상위 컴포넌트로 전달하지 않음
+    // 세션 시작은 버튼 클릭으로만 가능
   };
 
   const handleConnect = (targetInstanceId = null, targetInstance = null) => {
@@ -133,9 +131,6 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [], select
       setError('서버에 연결되지 않았습니다.');
       return;
     }
-
-    setIsConnecting(true);
-    setError('');
 
     // 인스턴스 정보 결정
     let instanceInfo = null;
@@ -157,8 +152,17 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [], select
         region: 'ap-northeast-2'
       };
     }
+    
+    // SSM 연결 확인 (직접 입력이 아닌 경우)
+    if (targetInstance && !canStartSession(targetInstance)) {
+      setError(getSessionBlockReason(targetInstance));
+      return;
+    }
 
-    // 인스턴스 정보만 상위 컴포넌트로 전달 (세션 시작은 App.js에서 처리)
+    setIsConnecting(true);
+    setError('');
+
+    // 인스턴스 정보를 상위 컴포넌트로 전달하여 세션 시작
     if (onInstanceSelect) {
       onInstanceSelect(instanceInfo);
     }
