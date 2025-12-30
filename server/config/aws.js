@@ -3,6 +3,7 @@ const { SSMClient } = require('@aws-sdk/client-ssm');
 const { EC2Client } = require('@aws-sdk/client-ec2');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 const { fromEnv } = require('@aws-sdk/credential-providers');
+const { getAccountCredentials } = require('./accounts');
 require('dotenv').config();
 
 // 크로스 어카운트 자격 증명 캐시
@@ -105,7 +106,20 @@ const bedrockClient = new BedrockRuntimeClient({
 });
 
 // 크로스 어카운트 SSM 클라이언트 가져오기
-async function getSSMClient() {
+async function getSSMClient(accountId = null, externalId = null) {
+  // 계정 ID가 지정된 경우 해당 계정의 자격 증명 사용
+  if (accountId) {
+    console.log(`🔐 계정 ${accountId}의 SSM 클라이언트 생성 중...`);
+    const credentials = await getAccountCredentials(accountId, externalId);
+    console.log(`✅ 계정 ${accountId}의 자격 증명 획득 완료`);
+    return new SSMClient({
+      region: process.env.AWS_REGION || 'ap-northeast-2',
+      credentials
+    });
+  }
+  
+  // 기본 동작 (레거시 호환)
+  console.log(`🔐 기본 계정의 SSM 클라이언트 사용`);
   if (!ssmClient) {
     ssmClient = await createCrossAccountClient(SSMClient);
   }
@@ -168,10 +182,10 @@ async function setupAWSProfile() {
       configContent = fs.readFileSync(configPath, 'utf8');
     }
 
-    // crossAccountTest 프로파일이 없으면 추가
-    if (!configContent.includes('[profile crossAccountTest]')) {
+    // SaltwareCrossAccount 프로파일이 없으면 추가
+    if (!configContent.includes('[profile SaltwareCrossAccount]')) {
       const crossAccountConfig = `
-[profile crossAccountTest]
+[profile SaltwareCrossAccount]
 region = ${process.env.AWS_REGION || 'ap-northeast-2'}
 role_arn = ${roleArn}
 source_profile = default
