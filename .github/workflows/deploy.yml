@@ -11,8 +11,6 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: ec2-session-manager
   ECS_CLUSTER: ec2-session-manager-cluster
-  ECS_SERVICE: ec2-session-manager-app
-  ECS_TASK_DEFINITION: ec2-session-manager-app
 
 jobs:
   deploy:
@@ -56,9 +54,17 @@ jobs:
 
     - name: Download task definition
       run: |
-        aws ecs describe-task-definition \
-          --task-definition ec2-session-manager-app \
-          --query taskDefinition > deployment/task-definition.json
+        # 먼저 app task definition 시도, 없으면 기존 것 사용
+        if aws ecs describe-task-definition --task-definition ec2-session-manager-app --region ${{ env.AWS_REGION }} 2>/dev/null; then
+          aws ecs describe-task-definition \
+            --task-definition ec2-session-manager-app \
+            --query taskDefinition > deployment/task-definition.json
+        else
+          echo "ec2-session-manager-app task definition not found, using ec2-session-manager"
+          aws ecs describe-task-definition \
+            --task-definition ec2-session-manager \
+            --query taskDefinition > deployment/task-definition.json
+        fi
 
     - name: Fill in the new image ID in the Amazon ECS task definition
       id: task-def
@@ -69,18 +75,37 @@ jobs:
         image: ${{ steps.build-image.outputs.image }}
 
     - name: Deploy Amazon ECS task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
-        cluster: ${{ env.ECS_CLUSTER }}
-        wait-for-service-stability: false
+      run: |
+        # 서비스 이름 확인 (app 서비스가 있으면 사용, 없으면 기존 서비스 사용)
+        if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ec2-session-manager-app --region ${{ env.AWS_REGION }} --query "services[0].status" --output text 2>/dev/null | grep -q "ACTIVE"; then
+          SERVICE_NAME="ec2-session-manager-app"
+        else
+          SERVICE_NAME="ec2-session-manager-service"
+        fi
+        
+        echo "Deploying to service: $SERVICE_NAME"
+        
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service $SERVICE_NAME \
+          --task-definition $(cat deployment/task-definition.json | jq -r '.family + ":" + (.revision|tostring)') \
+          --force-new-deployment \
+          --region ${{ env.AWS_REGION }}
 
     - name: Deployment summary
+      id: deployment-info
       run: |
+        # 배포된 서비스 이름 확인
+        if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ec2-session-manager-app --region ${{ env.AWS_REGION }} --query "services[0].status" --output text 2>/dev/null | grep -q "ACTIVE"; then
+          SERVICE_NAME="ec2-session-manager-app"
+        else
+          SERVICE_NAME="ec2-session-manager-service"
+        fi
+        
+        echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
         echo "🚀 Deployment completed successfully!"
         echo "📦 Image: ${{ steps.build-image.outputs.image }}"
-        echo "🔗 Service: ${{ env.ECS_SERVICE }}"
+        echo "🔗 Service: $SERVICE_NAME"
         echo "🎯 Cluster: ${{ env.ECS_CLUSTER }}"
 
     - name: Notify Slack on Success
@@ -116,6 +141,15 @@ jobs:
                     "type": "mrkdwn",
                     "text": "*👤 작성자*\n${{ github.actor }}"
                   },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*🎯 서비스*\n`${{ steps.deployment-info.outputs.service_name }}`"
+                  }
+                ]
+              },
+              {
+                "type": "section",
+                "fields": [
                   {
                     "type": "mrkdwn",
                     "text": "*🐳 이미지*\n`${{ steps.build-image.outputs.image }}`"
