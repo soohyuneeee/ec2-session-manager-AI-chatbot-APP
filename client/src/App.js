@@ -339,6 +339,8 @@ function App() {
             <ConnectionPanel 
               socket={socketRef.current} 
               onInstanceSelect={handleAddSession}
+              activeSessions={sessions}
+            />
             />
           </Box>
         ) : (

@@ -26,7 +26,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import StorageIcon from '@mui/icons-material/Storage';
 import InfoIcon from '@mui/icons-material/Info';
 
-const ConnectionPanel = ({ socket, onInstanceSelect }) => {
+const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
   const [instanceId, setInstanceId] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
@@ -205,6 +205,11 @@ const ConnectionPanel = ({ socket, onInstanceSelect }) => {
   const canStartSession = (instance) => {
     // running 상태이고 SSM Agent가 설치되어 있어야 함
     return instance.state === 'running';
+  };
+  
+  // 인스턴스가 이미 열려있는지 확인
+  const isSessionOpen = (instance) => {
+    return activeSessions.some(session => session.instance.instanceId === instance.instanceId);
   };
 
   // 세부정보 패널 열기/닫기
@@ -535,7 +540,7 @@ const ConnectionPanel = ({ socket, onInstanceSelect }) => {
                           <Button
                             fullWidth
                             size="small"
-                            variant={canStartSession(instance) ? "contained" : "outlined"}
+                            variant={isSessionOpen(instance) ? "outlined" : (canStartSession(instance) ? "contained" : "outlined")}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleConnect(instance.instanceId, instance);
@@ -548,7 +553,14 @@ const ConnectionPanel = ({ socket, onInstanceSelect }) => {
                               borderRadius: '4px',
                               px: 1,
                               minWidth: 0,
-                              ...(canStartSession(instance) ? {
+                              ...(isSessionOpen(instance) ? {
+                                borderColor: '#22c55e',
+                                color: '#22c55e',
+                                '&:hover': {
+                                  borderColor: '#16a34a',
+                                  backgroundColor: 'rgba(34, 197, 94, 0.1)'
+                                }
+                              } : canStartSession(instance) ? {
                                 background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                                 '&:hover': {
                                   background: 'linear-gradient(135deg, #4338ca 0%, #6d28d9 100%)'
@@ -560,6 +572,7 @@ const ConnectionPanel = ({ socket, onInstanceSelect }) => {
                             }}
                           >
                             {isConnecting ? '...' :
+                             isSessionOpen(instance) ? '열림' :
                              canStartSession(instance) ? '시작' :
                              '중지'}
                           </Button>
