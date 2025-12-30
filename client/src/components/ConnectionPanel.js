@@ -26,7 +26,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import StorageIcon from '@mui/icons-material/Storage';
 import InfoIcon from '@mui/icons-material/Info';
 
-const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
+const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [], selectedAccount = null }) => {
   const [instanceId, setInstanceId] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
@@ -103,7 +103,11 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
 
   const loadEC2Instances = () => {
     if (socket) {
-      socket.emit('get-ec2-instances');
+      // 계정 정보와 함께 인스턴스 조회
+      socket.emit('get-ec2-instances', {
+        accountId: selectedAccount?.accountId,
+        externalId: selectedAccount?.externalId
+      });
     }
   };
 
@@ -203,8 +207,58 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
 
   // 세션 시작 가능 여부 확인
   const canStartSession = (instance) => {
-    // running 상태이고 SSM Agent가 설치되어 있어야 함
-    return instance.state === 'running';
+    // running 상태이고 SSM Agent가 연결되어 있어야 함
+    return instance.state === 'running' && instance.ssmConnected === true;
+  };
+  
+  // 세션 시작 불가 사유
+  const getSessionBlockReason = (instance) => {
+    if (instance.state !== 'running') {
+      return `인스턴스가 ${instance.state === 'stopped' ? '중지' : instance.state} 상태입니다`;
+    }
+    
+    if (instance.ssmConnected === false) {
+      if (!instance.iamInstanceProfile) {
+        return 'IAM Instance Profile이 연결되지 않았습니다';
+      }
+      return 'SSM Agent가 설치되지 않았거나 연결되지 않았습니다';
+    }
+    
+    if (instance.ssmConnected === undefined || instance.ssmConnected === null) {
+      return 'SSM 연결 상태를 확인할 수 없습니다 (권한 부족 가능)';
+    }
+    
+    return null; // 시작 가능
+  };
+  
+  // SSM 연결 상태 아이콘
+  const getSSMStatusIcon = (instance) => {
+    if (instance.state !== 'running') {
+      return null; // 중지된 인스턴스는 SSM 상태 표시 안 함
+    }
+    
+    if (instance.ssmConnected === true) {
+      return '🟢'; // SSM 연결됨
+    } else if (instance.ssmConnected === false) {
+      return '🔴'; // SSM 연결 안 됨
+    } else {
+      return '⚪'; // SSM 상태 알 수 없음
+    }
+  };
+  
+  // SSM 연결 상태 툴팁
+  const getSSMStatusTooltip = (instance) => {
+    if (instance.state !== 'running') {
+      return '인스턴스가 중지됨';
+    }
+    
+    if (instance.ssmConnected === true) {
+      return `SSM 연결됨 (Agent: ${instance.ssmAgentVersion || 'Unknown'})`;
+    } else if (instance.ssmConnected === false) {
+      return 'SSM Agent 미연결 - IAM Role 또는 Agent 설치 필요';
+    } else {
+      return 'SSM 연결 상태 확인 불가';
+    }
   };
   
   // 인스턴스가 이미 열려있는지 확인
@@ -236,6 +290,55 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
             gap: 2
           }}
         >
+      {/* 선택된 계정 정보 */}
+      {selectedAccount && (
+        <Box 
+          sx={{ 
+            p: 1.5,
+            backgroundColor: '#f0fdf4',
+            borderBottom: '1px solid #bbf7d0',
+            borderLeft: '4px solid #22c55e'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: '#16a34a' }}>
+                🎯 대상 계정:
+              </Typography>
+              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
+                {selectedAccount.accountId}
+              </Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: '#5f6368' }}>
+                Role:
+              </Typography>
+              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#424242' }}>
+                {selectedAccount.roleName || 'SaltwareCrossAccount'}
+              </Typography>
+            </Box>
+            
+            {selectedAccount.externalId && (
+              <Chip 
+                label="External ID 사용" 
+                size="small"
+                sx={{ 
+                  height: 18, 
+                  fontSize: '0.65rem',
+                  backgroundColor: '#dcfce7',
+                  color: '#16a34a'
+                }}
+              />
+            )}
+          </Box>
+          
+          <Typography variant="caption" sx={{ display: 'block', color: '#616161', fontSize: '0.7rem' }}>
+            ✅ Switch Role 방식으로 안전하게 연결됩니다
+          </Typography>
+        </Box>
+      )}
+      
       {/* AWS 접근 정보 */}
       {roleInfo && (
         <Box 
@@ -501,17 +604,26 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
                             </Typography>
                           </Box>
                           
-                          <Chip 
-                            label={instance.state === 'running' ? '●' : '○'} 
-                            color={getStateColor(instance.state)}
-                            size="small"
-                            sx={{ 
-                              height: 18, 
-                              fontSize: '0.65rem', 
-                              minWidth: 18,
-                              '& .MuiChip-label': { px: 0.5 }
-                            }}
-                          />
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {getSSMStatusIcon(instance) && (
+                              <Tooltip title={getSSMStatusTooltip(instance)}>
+                                <span style={{ fontSize: '0.7rem', lineHeight: 1 }}>
+                                  {getSSMStatusIcon(instance)}
+                                </span>
+                              </Tooltip>
+                            )}
+                            <Chip 
+                              label={instance.state === 'running' ? '●' : '○'} 
+                              color={getStateColor(instance.state)}
+                              size="small"
+                              sx={{ 
+                                height: 18, 
+                                fontSize: '0.65rem', 
+                                minWidth: 18,
+                                '& .MuiChip-label': { px: 0.5 }
+                              }}
+                            />
+                          </Box>
                         </Box>
 
                         {/* 하단: 액션 버튼 */}
@@ -537,45 +649,56 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
                               <InfoIcon sx={{ fontSize: 14 }} />
                             </IconButton>
                           </Tooltip>
-                          <Button
-                            fullWidth
-                            size="small"
-                            variant={isSessionOpen(instance) ? "outlined" : (canStartSession(instance) ? "contained" : "outlined")}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleConnect(instance.instanceId, instance);
-                            }}
-                            disabled={isConnecting || !canStartSession(instance)}
-                            sx={{
-                              height: 26,
-                              fontSize: '0.7rem',
-                              textTransform: 'none',
-                              borderRadius: '4px',
-                              px: 1,
-                              minWidth: 0,
-                              ...(isSessionOpen(instance) ? {
-                                borderColor: '#22c55e',
-                                color: '#22c55e',
-                                '&:hover': {
-                                  borderColor: '#16a34a',
-                                  backgroundColor: 'rgba(34, 197, 94, 0.1)'
-                                }
-                              } : canStartSession(instance) ? {
-                                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                                '&:hover': {
-                                  background: 'linear-gradient(135deg, #4338ca 0%, #6d28d9 100%)'
-                                }
-                              } : {
-                                opacity: 0.6,
-                                cursor: 'not-allowed'
-                              })
-                            }}
+                          <Tooltip 
+                            title={!canStartSession(instance) ? getSessionBlockReason(instance) : ''}
+                            placement="top"
                           >
-                            {isConnecting ? '...' :
-                             isSessionOpen(instance) ? '열림' :
-                             canStartSession(instance) ? '시작' :
-                             '중지'}
-                          </Button>
+                            <span style={{ width: '100%' }}>
+                              <Button
+                                fullWidth
+                                size="small"
+                                variant={isSessionOpen(instance) ? "outlined" : (canStartSession(instance) ? "contained" : "outlined")}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (canStartSession(instance)) {
+                                    handleConnect(instance.instanceId, instance);
+                                  }
+                                }}
+                                disabled={isConnecting || !canStartSession(instance)}
+                                sx={{
+                                  height: 26,
+                                  fontSize: '0.7rem',
+                                  textTransform: 'none',
+                                  borderRadius: '4px',
+                                  px: 1,
+                                  minWidth: 0,
+                                  ...(isSessionOpen(instance) ? {
+                                    borderColor: '#22c55e',
+                                    color: '#22c55e',
+                                    '&:hover': {
+                                      borderColor: '#16a34a',
+                                      backgroundColor: 'rgba(34, 197, 94, 0.1)'
+                                    }
+                                  } : canStartSession(instance) ? {
+                                    background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                                    '&:hover': {
+                                      background: 'linear-gradient(135deg, #4338ca 0%, #6d28d9 100%)'
+                                    }
+                                  } : {
+                                    opacity: 0.6,
+                                    cursor: 'not-allowed',
+                                    borderColor: '#e0e0e0',
+                                    color: '#9e9e9e'
+                                  })
+                                }}
+                              >
+                                {isConnecting ? '...' :
+                                 isSessionOpen(instance) ? '열림' :
+                                 canStartSession(instance) ? '시작' :
+                                 '불가'}
+                              </Button>
+                            </span>
+                          </Tooltip>
                         </Box>
                       </Paper>
                   ))}
@@ -748,7 +871,11 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
                   fullWidth
                   size="medium"
                   startIcon={isConnecting ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
-                  onClick={() => handleConnect(detailInstance.instanceId, detailInstance)}
+                  onClick={() => {
+                    if (canStartSession(detailInstance)) {
+                      handleConnect(detailInstance.instanceId, detailInstance);
+                    }
+                  }}
                   disabled={isConnecting || !canStartSession(detailInstance)}
                   sx={{
                     py: 1,
@@ -761,18 +888,61 @@ const ConnectionPanel = ({ socket, onInstanceSelect, activeSessions = [] }) => {
                 >
                   {isConnecting ? '연결 중' : 
                    canStartSession(detailInstance) ? '세션 시작' : 
-                   detailInstance.state === 'stopped' ? '인스턴스 중지됨' : 
                    '세션 시작 불가'}
                 </Button>
                 
                 {!canStartSession(detailInstance) && (
-                  <Typography 
-                    variant="caption" 
-                    color="text.secondary" 
-                    sx={{ display: 'block', textAlign: 'center', mt: 0.5, fontSize: '0.7rem' }}
-                  >
-                    💡 인스턴스가 실행 중일 때만 세션을 시작할 수 있습니다
-                  </Typography>
+                  <Box sx={{ 
+                    mt: 1, 
+                    p: 1.5, 
+                    backgroundColor: '#fff3cd', 
+                    borderRadius: '8px',
+                    border: '1px solid #ffc107'
+                  }}>
+                    <Typography 
+                      variant="caption" 
+                      sx={{ 
+                        display: 'block', 
+                        fontSize: '0.75rem',
+                        color: '#856404',
+                        fontWeight: 500
+                      }}
+                    >
+                      ⚠️ {getSessionBlockReason(detailInstance)}
+                    </Typography>
+                    
+                    {detailInstance.state === 'running' && detailInstance.ssmConnected === false && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            display: 'block', 
+                            fontSize: '0.7rem',
+                            color: '#856404',
+                            lineHeight: 1.4
+                          }}
+                        >
+                          💡 해결 방법:
+                        </Typography>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            display: 'block', 
+                            fontSize: '0.7rem',
+                            color: '#856404',
+                            lineHeight: 1.4,
+                            ml: 1
+                          }}
+                        >
+                          {!detailInstance.iamInstanceProfile 
+                            ? '1. IAM Instance Profile 연결 (AmazonSSMManagedInstanceCore 정책 포함)'
+                            : '1. SSM Agent 설치 확인'}
+                          <br />
+                          2. 네트워크 연결 확인 (VPC 엔드포인트 또는 IGW)
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
                 )}
               </Box>
             </Box>
