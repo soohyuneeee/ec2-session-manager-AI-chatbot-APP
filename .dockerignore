@@ -13,5 +13,7 @@ README.md
 coverage
 .nyc_output
 dist
-build
+client/build
 .cache
+deployment
+.github
