@@ -7,8 +7,29 @@ set -e
 
 REGION="ap-northeast-2"
 CLUSTER_NAME="ec2-session-manager-cluster"
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text --region $REGION)
-SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text --region $REGION | tr '\t' ',')
+
+# 기존 ECS 서비스에서 VPC와 서브넷 정보 가져오기
+echo "🔍 기존 서비스 정보 조회 중..."
+EXISTING_SERVICE_CONFIG=$(aws ecs describe-services \
+  --cluster $CLUSTER_NAME \
+  --services ec2-session-manager-service \
+  --region $REGION \
+  --query "services[0].networkConfiguration.awsvpcConfiguration" \
+  --output json 2>/dev/null || echo "{}")
+
+if [ "$EXISTING_SERVICE_CONFIG" != "{}" ]; then
+  VPC_ID=$(aws ec2 describe-subnets \
+    --subnet-ids $(echo $EXISTING_SERVICE_CONFIG | jq -r '.subnets[0]') \
+    --region $REGION \
+    --query "Subnets[0].VpcId" --output text)
+  SUBNETS=$(echo $EXISTING_SERVICE_CONFIG | jq -r '.subnets | join(",")')
+  EXISTING_SG=$(echo $EXISTING_SERVICE_CONFIG | jq -r '.securityGroups[0]')
+else
+  # 기존 서비스가 없으면 기본 VPC 사용
+  VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text --region $REGION)
+  SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text --region $REGION | tr '\t' ',')
+fi
+
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 echo "🚀 Redis와 App 서비스 분리 설정 시작..."
@@ -20,17 +41,41 @@ echo "Account: $ACCOUNT_ID"
 echo "📡 Cloud Map 네임스페이스 생성 중..."
 NAMESPACE_ID=$(aws servicediscovery list-namespaces --query "Namespaces[?Name=='ec2-session-manager.local'].Id" --output text --region $REGION)
 
-if [ -z "$NAMESPACE_ID" ]; then
-  NAMESPACE_ID=$(aws servicediscovery create-private-dns-namespace \
+if [ -z "$NAMESPACE_ID" ] || [ "$NAMESPACE_ID" == "None" ]; then
+  OPERATION_ID=$(aws servicediscovery create-private-dns-namespace \
     --name ec2-session-manager.local \
     --vpc $VPC_ID \
     --region $REGION \
     --query "OperationId" --output text)
   
-  echo "⏳ 네임스페이스 생성 대기 중..."
-  sleep 30
+  echo "⏳ 네임스페이스 생성 대기 중 (Operation ID: $OPERATION_ID)..."
   
+  # 작업 완료 대기 (최대 2분)
+  for i in {1..24}; do
+    STATUS=$(aws servicediscovery get-operation \
+      --operation-id $OPERATION_ID \
+      --region $REGION \
+      --query "Operation.Status" --output text 2>/dev/null || echo "PENDING")
+    
+    if [ "$STATUS" == "SUCCESS" ]; then
+      echo "✅ 네임스페이스 생성 완료"
+      break
+    elif [ "$STATUS" == "FAIL" ]; then
+      echo "❌ 네임스페이스 생성 실패"
+      exit 1
+    fi
+    
+    echo "   대기 중... ($i/24) - 상태: $STATUS"
+    sleep 5
+  done
+  
+  # 네임스페이스 ID 다시 조회
   NAMESPACE_ID=$(aws servicediscovery list-namespaces --query "Namespaces[?Name=='ec2-session-manager.local'].Id" --output text --region $REGION)
+fi
+
+if [ -z "$NAMESPACE_ID" ] || [ "$NAMESPACE_ID" == "None" ]; then
+  echo "❌ 네임스페이스 ID를 가져올 수 없습니다"
+  exit 1
 fi
 
 echo "✅ 네임스페이스 ID: $NAMESPACE_ID"
