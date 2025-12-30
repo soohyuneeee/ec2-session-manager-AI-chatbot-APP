@@ -20,7 +20,9 @@ RUN npm ci
 RUN cd client && npm ci
 
 # Copy source code
-COPY . .
+COPY server ./server
+COPY client/src ./client/src
+COPY client/public ./client/public
 
 # Build client
 RUN cd client && npm run build
