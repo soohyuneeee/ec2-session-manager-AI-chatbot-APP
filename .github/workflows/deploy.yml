@@ -11,8 +11,8 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: ec2-session-manager
   ECS_CLUSTER: ec2-session-manager-cluster
-  ECS_SERVICE: ec2-session-manager-service
-  ECS_TASK_DEFINITION: ec2-session-manager
+  ECS_SERVICE: ec2-session-manager-app
+  ECS_TASK_DEFINITION: ec2-session-manager-app
 
 jobs:
   deploy:
@@ -57,7 +57,7 @@ jobs:
     - name: Download task definition
       run: |
         aws ecs describe-task-definition \
-          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --task-definition ec2-session-manager-app \
           --query taskDefinition > deployment/task-definition.json
 
     - name: Fill in the new image ID in the Amazon ECS task definition
