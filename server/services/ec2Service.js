@@ -1,6 +1,9 @@
 const { getEC2Client } = require('../config/aws');
 const { DescribeInstancesCommand } = require('@aws-sdk/client-ec2');
+const { EC2Client } = require('@aws-sdk/client-ec2');
+const { SSMClient, DescribeInstanceInformationCommand } = require('@aws-sdk/client-ssm');
 const { filterCommandsByPermissions, getPermissionConstraints } = require('../config/permissions');
+const { getAccountList, getAccountCredentials, getBaseAccountInfo } = require('../config/accounts');
 
 // AWS 접근 정보 조회 (간단 버전)
 async function getAWSRoleInfo() {
@@ -153,7 +156,7 @@ function generateOSSpecificActions(instanceInfo) {
   actions.push({
     id: 'permission_info',
     title: '🔒 현재 권한 제약사항 안내',
-    description: 'crossAccountTest 역할의 제한된 권한으로 실행 중입니다',
+    description: 'SaltwareCrossAccount 역할의 제한된 권한으로 실행 중입니다',
     commands: [
       'echo "=== 현재 권한 제약사항 ==="',
       'echo "✅ 허용: 시스템 정보 조회, 파일 읽기, 네트워크 테스트"', 
@@ -353,5 +356,230 @@ function generateOSSpecificActions(instanceInfo) {
 module.exports = {
   getEC2InstancesByRegion,
   generateOSSpecificActions,
-  getAWSRoleInfo
+  getAWSRoleInfo,
+  getEC2InstancesByAccount,
+  getEC2InstancesByRegionForAccount
 };
+
+/**
+ * 멀티 계정의 EC2 인스턴스 조회
+ * @returns {Object} 계정별 인스턴스 목록
+ */
+async function getEC2InstancesByAccount() {
+  try {
+    const accounts = getAccountList();
+    const baseAccount = await getBaseAccountInfo();
+    
+    // 기본 계정 추가
+    const allAccounts = [
+      {
+        accountId: baseAccount.accountId,
+        accountName: '기본 계정',
+        externalId: null,
+        isBase: true
+      },
+      ...accounts
+    ];
+    
+    console.log(`🔍 ${allAccounts.length}개 계정에서 인스턴스 조회 시작...`);
+    
+    // 각 계정별로 인스턴스 조회
+    const accountPromises = allAccounts.map(async (account) => {
+      try {
+        const credentials = await getAccountCredentials(
+          account.isBase ? null : account.accountId,
+          account.externalId
+        );
+        
+        // 해당 계정의 인스턴스 조회
+        const instancesByRegion = await getEC2InstancesByRegionForAccount(credentials, account);
+        
+        return {
+          accountId: account.accountId,
+          accountName: account.accountName,
+          instancesByRegion,
+          totalInstances: Object.values(instancesByRegion).reduce((sum, instances) => sum + instances.length, 0)
+        };
+      } catch (error) {
+        console.error(`❌ 계정 ${account.accountName} (${account.accountId}) 조회 실패:`, error.message);
+        return {
+          accountId: account.accountId,
+          accountName: account.accountName,
+          instancesByRegion: {},
+          totalInstances: 0,
+          error: error.message
+        };
+      }
+    });
+    
+    const results = await Promise.all(accountPromises);
+    
+    // 결과를 계정별로 정리
+    const instancesByAccount = {};
+    results.forEach(result => {
+      if (result.totalInstances > 0) {
+        instancesByAccount[result.accountId] = {
+          accountName: result.accountName,
+          instancesByRegion: result.instancesByRegion,
+          totalInstances: result.totalInstances
+        };
+      }
+    });
+    
+    const totalAccounts = Object.keys(instancesByAccount).length;
+    const totalInstances = Object.values(instancesByAccount).reduce((sum, acc) => sum + acc.totalInstances, 0);
+    
+    console.log(`✅ 멀티 계정 조회 완료: ${totalInstances}개 인스턴스 (${totalAccounts}개 계정)`);
+    
+    return instancesByAccount;
+  } catch (error) {
+    console.error('❌ 멀티 계정 인스턴스 조회 실패:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * SSM 연결 상태 확인
+ * @param {Object} credentials - AWS 자격 증명
+ * @param {string} region - 리전
+ * @param {Array} instanceIds - 인스턴스 ID 목록
+ * @returns {Object} 인스턴스별 SSM 연결 상태
+ */
+async function checkSSMConnectivity(credentials, region, instanceIds) {
+  if (!instanceIds || instanceIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const ssmClient = new SSMClient({
+      region,
+      credentials
+    });
+
+    const command = new DescribeInstanceInformationCommand({
+      Filters: [
+        {
+          Key: 'InstanceIds',
+          Values: instanceIds
+        }
+      ]
+    });
+
+    const result = await ssmClient.send(command);
+    
+    // SSM에 연결된 인스턴스 맵 생성
+    const ssmConnectedMap = {};
+    result.InstanceInformationList?.forEach(info => {
+      ssmConnectedMap[info.InstanceId] = {
+        connected: info.PingStatus === 'Online',
+        pingStatus: info.PingStatus,
+        platformType: info.PlatformType,
+        platformName: info.PlatformName,
+        platformVersion: info.PlatformVersion,
+        agentVersion: info.AgentVersion
+      };
+    });
+
+    return ssmConnectedMap;
+  } catch (error) {
+    // SSM 권한이 없거나 오류 발생 시 빈 객체 반환
+    console.warn(`⚠️ SSM 연결 상태 확인 실패 (${region}):`, error.message);
+    return {};
+  }
+}
+
+/**
+ * 특정 계정의 모든 리전에서 인스턴스 조회
+ * @param {Object} credentials - AWS 자격 증명
+ * @param {Object} accountInfo - 계정 정보
+ * @returns {Object} 리전별 인스턴스 목록
+ */
+async function getEC2InstancesByRegionForAccount(credentials, accountInfo) {
+  const regions = [
+    'us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1', 'eu-central-1',
+    'ap-northeast-1', 'ap-northeast-2', 'ap-southeast-1', 'ap-southeast-2',
+    'ap-south-1', 'sa-east-1', 'ca-central-1'
+  ];
+  
+  const regionPromises = regions.map(async (region) => {
+    try {
+      const ec2Client = new EC2Client({
+        region,
+        credentials
+      });
+      
+      const params = {
+        Filters: [
+          {
+            Name: 'instance-state-name',
+            Values: ['running', 'stopped']
+          }
+        ]
+      };
+      
+      const command = new DescribeInstancesCommand(params);
+      const result = await ec2Client.send(command);
+      const instances = [];
+      
+      result.Reservations.forEach(reservation => {
+        reservation.Instances.forEach(instance => {
+          const nameTag = instance.Tags?.find(tag => tag.Key === 'Name');
+          instances.push({
+            instanceId: instance.InstanceId,
+            name: nameTag?.Value || 'Unnamed',
+            state: instance.State.Name,
+            instanceType: instance.InstanceType,
+            platform: instance.Platform || 'Linux/Unix',
+            platformDetails: instance.PlatformDetails,
+            architecture: instance.Architecture,
+            launchTime: instance.LaunchTime,
+            privateIpAddress: instance.PrivateIpAddress,
+            publicIpAddress: instance.PublicIpAddress,
+            vpcId: instance.VpcId,
+            subnetId: instance.SubnetId,
+            securityGroups: instance.SecurityGroups,
+            keyName: instance.KeyName,
+            iamInstanceProfile: instance.IamInstanceProfile,
+            region: region,
+            accountId: accountInfo.accountId,
+            accountName: accountInfo.accountName
+          });
+        });
+      });
+      
+      if (instances.length > 0) {
+        // SSM 연결 상태 확인
+        const instanceIds = instances.map(i => i.instanceId);
+        const ssmStatus = await checkSSMConnectivity(credentials, region, instanceIds);
+        
+        // 인스턴스에 SSM 상태 추가
+        instances.forEach(instance => {
+          const ssm = ssmStatus[instance.instanceId];
+          instance.ssmConnected = ssm?.connected || false;
+          instance.ssmPingStatus = ssm?.pingStatus || 'Unknown';
+          instance.ssmAgentVersion = ssm?.agentVersion || null;
+        });
+        
+        return { region, instances };
+      } else {
+        return { region, instances: [] };
+      }
+    } catch (error) {
+      if (error.code !== 'UnauthorizedOperation') {
+        console.error(`❌ 계정 ${accountInfo.accountName}, 리전 ${region} 조회 오류:`, error.message);
+      }
+      return { region, instances: [] };
+    }
+  });
+  
+  const results = await Promise.all(regionPromises);
+  
+  const instancesByRegion = {};
+  results.forEach(({ region, instances }) => {
+    if (instances.length > 0) {
+      instancesByRegion[region] = instances;
+    }
+  });
+  
+  return instancesByRegion;
+}
