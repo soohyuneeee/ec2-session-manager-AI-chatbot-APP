@@ -194,9 +194,26 @@ function executeCommandSequence(ptyProcess, commands, socket, index = 0, executi
   
   setTimeout(() => {
     let commandCompleted = false;
+    let needsQuit = false; // 'q' 입력이 필요한지 추적
+    
+    // 페이저를 사용하는 명령어 패턴 감지
+    const commandLower = command.toLowerCase();
+    const pagerCommands = [
+      'less', 'more', 'systemctl status', 'journalctl', 
+      'git log', 'git diff', 'man ', 'tail -f', 'watch '
+    ];
+    
+    // 명령어가 페이저를 사용하는지 확인
+    const usesPager = pagerCommands.some(pagerCmd => commandLower.includes(pagerCmd));
+    
     outputCollector = (data) => {
       const output = data.toString();
       commandOutput += output;
+      
+      // 페이저 프롬프트 감지 (less, more 등)
+      if (output.includes('(END)') || output.includes('--More--') || output.includes('lines ')) {
+        needsQuit = true;
+      }
       
       if ((output.includes('sh-4.2$') || output.includes('$') || output.includes('#')) && !commandCompleted) {
         commandCompleted = true;
@@ -267,57 +284,75 @@ function executeCommandSequence(ptyProcess, commands, socket, index = 0, executi
           if (outputCollector) {
             ptyProcess.removeListener('data', outputCollector);
           }
-          executionResults.push(commandOutput);
           
-          const hasError = outputLower.includes('error') || outputLower.includes('failed') || outputLower.includes('command not found');
-          
-          const statuses = commands.map((cmd, i) => {
-            if (i < index) return 'completed';
-            if (i === index) return hasError ? 'warning' : 'completed';
-            if (i === index + 1) return 'running';
-            return 'pending';
-          });
-          
-          if (index + 1 < commands.length) {
-            socket.emit('chat-response', {
-              message: `🚀 **액션 실행 중** (${commands.length}개 명령어)`,
-              timestamp: new Date(),
-              isAction: true,
-              isProgress: true,
-              actionId: actionId,
-              updateProgress: true,
-              progressMessageId: `progress-${actionId}`,
-              collapsible: true,
-              progressData: {
-                total: commands.length,
-                current: index + 1,
-                commands: commands,
-                statuses: statuses
-              }
-            });
+          // 페이저가 감지되었으면 'q' 입력
+          if (needsQuit || usesPager) {
+            console.log(`페이저 감지됨, 'q' 자동 입력: ${command}`);
+            ptyProcess.write('q');
+            
+            // 'q' 입력 후 잠시 대기
+            setTimeout(() => {
+              executionResults.push(commandOutput);
+              continueExecution();
+            }, 300);
           } else {
-            socket.emit('chat-response', {
-              message: `✅ **액션 실행 완료** (${commands.length}개 명령어)`,
-              timestamp: new Date(),
-              isAction: true,
-              isProgress: true,
-              actionId: actionId,
-              updateProgress: true,
-              progressMessageId: `progress-${actionId}`,
-              collapsible: true,
-              collapsed: true,
-              progressData: {
-                total: commands.length,
-                current: commands.length,
-                commands: commands,
-                statuses: commands.map((cmd, i) => i === index && hasError ? 'warning' : 'completed')
-              }
-            });
+            executionResults.push(commandOutput);
+            continueExecution();
           }
-          
-          executeCommandSequence(ptyProcess, commands, socket, index + 1, executionResults, actionId, skipInitialMessage, actionTitle);
         }, 500);
       }
+    };
+    
+    // 실행 계속 진행하는 함수
+    const continueExecution = () => {
+      const outputLower = commandOutput.toLowerCase();
+      const hasError = outputLower.includes('error') || outputLower.includes('failed') || outputLower.includes('command not found');
+      
+      const statuses = commands.map((cmd, i) => {
+        if (i < index) return 'completed';
+        if (i === index) return hasError ? 'warning' : 'completed';
+        if (i === index + 1) return 'running';
+        return 'pending';
+      });
+      
+      if (index + 1 < commands.length) {
+        socket.emit('chat-response', {
+          message: `🚀 **액션 실행 중** (${commands.length}개 명령어)`,
+          timestamp: new Date(),
+          isAction: true,
+          isProgress: true,
+          actionId: actionId,
+          updateProgress: true,
+          progressMessageId: `progress-${actionId}`,
+          collapsible: true,
+          progressData: {
+            total: commands.length,
+            current: index + 1,
+            commands: commands,
+            statuses: statuses
+          }
+        });
+      } else {
+        socket.emit('chat-response', {
+          message: `✅ **액션 실행 완료** (${commands.length}개 명령어)`,
+          timestamp: new Date(),
+          isAction: true,
+          isProgress: true,
+          actionId: actionId,
+          updateProgress: true,
+          progressMessageId: `progress-${actionId}`,
+          collapsible: true,
+          collapsed: true,
+          progressData: {
+            total: commands.length,
+            current: commands.length,
+            commands: commands,
+            statuses: commands.map((cmd, i) => i === index && hasError ? 'warning' : 'completed')
+          }
+        });
+      }
+      
+      executeCommandSequence(ptyProcess, commands, socket, index + 1, executionResults, actionId, skipInitialMessage, actionTitle);
     };
     
     ptyProcess.on('data', outputCollector);

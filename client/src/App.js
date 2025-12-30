@@ -107,6 +107,19 @@ function App() {
 
   // 새 세션 추가 - 각 세션마다 독립적인 socket 생성
   const handleAddSession = (instance) => {
+    // 이미 같은 인스턴스의 세션이 열려있는지 확인
+    const existingSession = sessions.find(s => s.instance.instanceId === instance.instanceId);
+    
+    if (existingSession) {
+      // 이미 열려있으면 해당 탭으로 이동
+      setActiveSessionId(existingSession.id);
+      setShowConnectionPanel(false);
+      
+      // 사용자에게 알림 (선택사항)
+      console.log(`인스턴스 ${instance.name}의 세션이 이미 열려있습니다. 해당 탭으로 이동합니다.`);
+      return;
+    }
+    
     const newSessionId = `session_${Date.now()}`;
     
     // 새로운 socket 연결 생성
