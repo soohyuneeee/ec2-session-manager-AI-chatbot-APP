@@ -370,13 +370,13 @@ ec2-session-manager-AI-chatbot-APP/
 
 ```bash
 # 1. 인프라 설정
-./setup-infrastructure.sh ssm.soohyuneeee.com
+./deployment/setup-infrastructure.sh ssm.soohyuneeee.com
 
 # 2. 시크릿 설정
-./setup-secrets.sh
+./deployment/setup-secrets.sh
 
 # 3. 배포
-./deploy.sh
+./deployment/deploy.sh
 ```
 
 자세한 내용은 [DEPLOYMENT.md](DEPLOYMENT.md)를 참고하세요.

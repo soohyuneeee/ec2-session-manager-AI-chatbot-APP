@@ -11,11 +11,11 @@ client/node_modules/
 
 # AWS credentials and secrets
 *-updated.json
-task-definition.json
+deployment/task-definition.json
 github-actions-policy.json
 
 # Deployment scripts with sensitive data
-setup-secrets.sh
+deployment/setup-secrets.sh
 
 # Build outputs
 client/build/
